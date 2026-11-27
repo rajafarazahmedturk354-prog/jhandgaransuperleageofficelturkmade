@@ -1,0 +1,2025 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- =================================================================== -->
+    <!-- SECTION 1: DOCUMENT HEAD, GOOGLE FONTS & TAILWIND SETUP             -->
+    <!-- =================================================================== -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>{{ tournament_title }} | Official Tournament Portal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        display: ['Montserrat', 'sans-serif'],
+                        sans: ['Plus Jakarta Sans', 'sans-serif']
+                    }
+                }
+            }
+        };
+    </script>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen flex flex-col relative overflow-x-hidden antialiased">
+
+    <!-- ===================================================================== -->
+    <!-- SECTION 2: FULL-SCREEN CRICKET VIDEO / STADIUM BACKGROUND             -->
+    <!-- ===================================================================== -->
+    <div class="fixed inset-0 -z-10 pointer-events-none overflow-hidden bg-emerald-950">
+        {% if has_bg_video %}
+            <video autoplay loop muted playsinline class="w-full h-full object-cover opacity-75 scale-105">
+                <source src="{{ url_for('static', filename='videos/cricket-bg.mp4') }}" type="video/mp4">
+            </video>
+        {% elif bg_direct_mp4 %}
+            <video autoplay loop muted playsinline class="w-full h-full object-cover opacity-75 scale-105">
+                <source src="{{ bg_direct_mp4 }}" type="video/mp4">
+            </video>
+        {% elif bg_youtube_id %}
+            <iframe
+                src="https://www.youtube.com/embed/{{ bg_youtube_id }}?autoplay=1&mute=1&loop=1&playlist={{ bg_youtube_id }}&controls=0&showinfo=0&modestbranding=1&rel=0"
+                allow="autoplay; encrypted-media"
+                class="w-[140vw] h-[140vh] -ml-[20vw] -mt-[20vh] opacity-70 pointer-events-none"
+            ></iframe>
+        {% else %}
+            <canvas id="cricketMotionBg" class="w-full h-full block opacity-95"></canvas>
+        {% endif %}
+        <div class="absolute inset-0 bg-gradient-to-b from-slate-950/50 via-slate-950/35 to-slate-950/70"></div>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- SECTION 3: HEADER BANNER & ADMIN ACCESS BAR                           -->
+    <!-- ===================================================================== -->
+    <header class="bg-slate-950/70 backdrop-blur-md border-b border-emerald-400/30 py-6 sm:py-9 px-3 sm:px-4 text-center shadow-lg relative">
+        <div class="max-w-6xl mx-auto flex flex-wrap justify-end items-center gap-2 mb-3">
+            {% if not is_admin %}
+                <button
+                    type="button"
+                    onclick="goToOnboardingStage(1)"
+                    class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-amber-300 border border-amber-400/40 cursor-pointer transition"
+                >
+                    Welcome &amp; Rules
+                </button>
+            {% endif %}
+
+            {% if is_admin %}
+                <span class="text-[11px] font-bold px-3 py-1 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/40">
+                    ADMIN ACTIVE
+                </span>
+                <button
+                    type="button"
+                    onclick="openRegistrationModal()"
+                    class="text-xs font-bold px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 cursor-pointer transition"
+                >
+                    + Register Team
+                </button>
+                <form method="POST" action="{{ url_for('admin_logout') }}" class="inline">
+                    <button
+                        type="submit"
+                        class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 cursor-pointer transition"
+                    >
+                        Logout
+                    </button>
+                </form>
+            {% else %}
+                <button
+                    type="button"
+                    onclick="openAdminModal()"
+                    class="text-xs font-semibold px-3.5 py-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-emerald-300 border border-emerald-400/40 cursor-pointer transition"
+                >
+                    Admin Login
+                </button>
+            {% endif %}
+        </div>
+
+        <p class="text-[11px] sm:text-xs uppercase tracking-[0.25em] text-emerald-300 font-bold mb-1.5">
+            Official Tournament Portal
+        </p>
+        <h1 class="font-display text-xl sm:text-4xl font-black tracking-wide text-white leading-tight break-words">
+            {{ tournament_title }}
+        </h1>
+
+        <div class="mt-4 sm:mt-5 inline-flex items-center gap-2 bg-slate-950/85 px-4 sm:px-6 py-2 rounded-full border border-emerald-400/50 shadow">
+            <span class="h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span id="liveSlotsText" class="text-xs sm:text-base font-bold text-emerald-300">
+                Live Slots: {{ total }} / {{ max_teams }} Teams Registered
+            </span>
+        </div>
+    </header>
+
+    <!-- ===================================================================== -->
+    <!-- SECTION 4: MAIN WORKSPACE (ADMIN, WELCOME/RULES OR LIVE DASHBOARD)    -->
+    <!-- ===================================================================== -->
+    <main class="flex-1 max-w-6xl w-full mx-auto px-3 sm:px-6 py-5 sm:py-8 space-y-6 sm:space-y-8">
+
+        {% if is_admin %}
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-7 items-start">
+
+                <!-- 4A. ADMIN WORKSPACE: TOP POOL, GROUPS & MATCHES -->
+                <div class="lg:col-span-8 space-y-6">
+
+                    <!-- Top: Active Teams Pool (With Full Edit Button) -->
+                    <section class="bg-slate-900/80 backdrop-blur-md p-4 sm:p-6 rounded-2xl border border-emerald-400/25 shadow-2xl space-y-4">
+                        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                            <div>
+                                <h2 class="font-display text-lg sm:text-xl font-bold text-white">Active Teams Pool</h2>
+                                <p class="text-xs text-slate-300 mt-0.5">
+                                    Use Edit to fix any typo or photo, REGISRD to move into a group, WAIT for waiting list, or CXL to cancel.
+                                </p>
+                            </div>
+                            <span id="adminPoolCountBadge" class="text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 px-3 py-1 rounded-full">
+                                {{ total }} / {{ max_teams }} REGISRD
+                            </span>
+                        </div>
+
+                        <div id="adminPoolContainer" class="grid grid-cols-1 sm:grid-cols-2 gap-3.5"></div>
+                    </section>
+
+                    <!-- Middle: Groups (GROUP A, GROUP B, ADD NEW GROUP & ADD TEAM) -->
+                    <section class="bg-slate-900/80 backdrop-blur-md p-4 sm:p-6 rounded-2xl border border-emerald-400/25 shadow-2xl space-y-5">
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-800 pb-4">
+                            <div>
+                                <h2 class="font-display text-lg sm:text-xl font-bold text-white">Tournament Groups</h2>
+                                <p class="text-xs text-slate-300 mt-0.5">
+                                    Assigned teams appear in the group scroll box and show live on the user dashboard.
+                                </p>
+                            </div>
+
+                            <form method="POST" action="{{ url_for('add_group') }}" class="flex items-center gap-2">
+                                <input
+                                    type="text"
+                                    name="group_name"
+                                    required
+                                    placeholder="New Group (e.g. Group C)"
+                                    class="px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs sm:text-sm text-white placeholder-slate-400 focus:border-emerald-400 outline-none"
+                                >
+                                <button
+                                    type="submit"
+                                    class="shrink-0 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-3.5 py-2 rounded-xl text-xs sm:text-sm cursor-pointer transition"
+                                >
+                                    + Add New Group
+                                </button>
+                            </form>
+                        </div>
+
+                        <div id="adminGroupsGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-4"></div>
+                    </section>
+
+                    <!-- Bottom: Match Schedule Setup with + Add Match Button -->
+                    <section class="bg-slate-900/80 backdrop-blur-md p-4 sm:p-6 rounded-2xl border border-emerald-400/25 shadow-2xl space-y-5">
+                        <div class="border-b border-slate-800 pb-3">
+                            <h2 class="font-display text-lg sm:text-xl font-bold text-white">Match Schedule Setup (Team 1 vs Team 2)</h2>
+                            <p class="text-xs text-slate-300 mt-0.5">
+                                Add as many matches as needed for the day. Each match displays full-size captain photos and team names sequentially like an ad.
+                            </p>
+                        </div>
+
+                        <form method="POST" action="{{ url_for('add_match') }}" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
+                            <div>
+                                <label class="block text-xs text-slate-300 mb-1">Team 1</label>
+                                <select
+                                    id="matchTeam1Select"
+                                    name="team1_id"
+                                    required
+                                    class="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs sm:text-sm text-white outline-none focus:border-emerald-400"
+                                ></select>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs text-slate-300 mb-1">Team 2</label>
+                                <select
+                                    id="matchTeam2Select"
+                                    name="team2_id"
+                                    required
+                                    class="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs sm:text-sm text-white outline-none focus:border-emerald-400"
+                                ></select>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs text-slate-300 mb-1">Match Date</label>
+                                <input
+                                    type="date"
+                                    name="match_date"
+                                    required
+                                    class="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs sm:text-sm text-white outline-none focus:border-emerald-400"
+                                >
+                            </div>
+
+                            <div>
+                                <label class="block text-xs text-slate-300 mb-1">Match Time</label>
+                                <input
+                                    type="time"
+                                    name="match_time"
+                                    required
+                                    class="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs sm:text-sm text-white outline-none focus:border-emerald-400"
+                                >
+                            </div>
+
+                            <button
+                                type="submit"
+                                class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold py-2.5 px-4 rounded-xl text-xs sm:text-sm cursor-pointer shadow transition"
+                            >
+                                + Add Match
+                            </button>
+                        </form>
+
+                        <div id="adminMatchesList" class="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2"></div>
+                    </section>
+                </div>
+
+                <!-- 4B. ADMIN RIGHT SIDEBAR: LIVE STATUS TRACKER (REGISRD / CXL / WAIT) -->
+                <aside class="lg:col-span-4 bg-slate-900/85 backdrop-blur-md p-4 sm:p-5 rounded-2xl border border-emerald-400/25 shadow-2xl space-y-4 lg:sticky lg:top-5">
+                    <div class="border-b border-slate-800 pb-3">
+                        <h2 class="font-display text-base sm:text-lg font-extrabold text-white">Team Status Tracker</h2>
+                        <p class="text-xs text-slate-300 mt-0.5">
+                            Live breakdown of REGISRD, CXL, and WAIT teams.
+                        </p>
+                    </div>
+
+                    <div id="sideStatusListContainer" class="space-y-4 max-h-[46rem] overflow-y-auto pr-1"></div>
+                </aside>
+
+            </div>
+        {% else %}
+           <!-- 4C. STAGE 1: GRAND VILLAGE CRICKET WELCOME + PUBLICITY DATES + DEVELOPER CARD -->
+            <section id="welcomeScreen" class="relative overflow-hidden rounded-3xl border border-emerald-400/40 shadow-2xl min-h-[36rem] sm:min-h-[40rem] flex flex-col justify-between p-5 sm:p-9 bg-emerald-950">
+                <div class="absolute inset-0 z-0 pointer-events-none">
+                    <svg viewBox="0 0 1200 700" preserveAspectRatio="xMidYMid slice" class="w-full h-full">
+                        <defs>
+                            <linearGradient id="villageSky" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stop-color="#0f3d2e" />
+                                <stop offset="55%" stop-color="#1b6b4b" />
+                                <stop offset="100%" stop-color="#34a873" />
+                            </linearGradient>
+                            <linearGradient id="villageGround" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stop-color="#15803d" />
+                                <stop offset="100%" stop-color="#052e16" />
+                            </linearGradient>
+                        </defs>
+                        <rect width="1200" height="700" fill="url(#villageSky)" />
+                        <path d="M0 330 Q260 220 560 320 T1200 280 L1200 700 L0 700 Z" fill="#064e3b" opacity="0.7" />
+                        <circle cx="130" cy="315" r="55" fill="#166534" />
+                        <rect x="122" y="340" width="16" height="45" fill="#451a03" />
+                        <circle cx="1065" cy="300" r="65" fill="#15803d" />
+                        <rect x="1056" y="330" width="18" height="50" fill="#451a03" />
+                        <rect y="365" width="1200" height="335" fill="url(#villageGround)" />
+                        <polygon points="475,390 725,390 830,660 370,660" fill="#ca8a04" opacity="0.45" />
+                        <rect x="588" y="455" width="6" height="58" fill="#fef3c7" />
+                        <rect x="599" y="455" width="6" height="58" fill="#fef3c7" />
+                        <rect x="610" y="455" width="6" height="58" fill="#fef3c7" />
+                        <rect x="645" y="475" width="12" height="46" rx="3" transform="rotate(28 645 475)" fill="#f59e0b" />
+                        <circle cx="535" cy="530" r="10" fill="#ef4444" />
+                    </svg>
+                    <div class="absolute inset-0 bg-gradient-to-b from-slate-950/65 via-slate-950/35 to-slate-950/80"></div>
+                </div>
+
+                <!-- Top Tournament Publicity Dates & Days Banner -->
+                <div class="relative z-10 text-center space-y-4 pt-1">
+                    <div class="max-w-3xl mx-auto bg-slate-950/85 backdrop-blur-xl border border-amber-400/50 rounded-2xl px-4 py-3.5 shadow-2xl">
+                        <p class="text-[11px] sm:text-xs font-extrabold uppercase tracking-[0.25em] text-emerald-300 mb-2">
+                            Grand Tournament Fixtures &bull; Save The Dates
+                        </p>
+                        <div class="grid grid-cols-3 gap-2 sm:gap-3">
+                            <div class="bg-gradient-to-b from-amber-400/20 to-slate-900/90 border border-amber-400/40 rounded-xl py-2 px-2">
+                                <p class="font-display text-sm sm:text-xl font-black text-amber-300">11 DEC</p>
+                                <p class="text-[10px] sm:text-xs font-extrabold uppercase tracking-wider text-white">Friday</p>
+                            </div>
+                            <div class="bg-gradient-to-b from-emerald-400/25 to-slate-900/90 border border-emerald-400/45 rounded-xl py-2 px-2">
+                                <p class="font-display text-sm sm:text-xl font-black text-emerald-300">12 DEC</p>
+                                <p class="text-[10px] sm:text-xs font-extrabold uppercase tracking-wider text-white">Saturday</p>
+                            </div>
+                            <div class="bg-gradient-to-b from-amber-400/20 to-slate-900/90 border border-amber-400/40 rounded-xl py-2 px-2">
+                                <p class="font-display text-sm sm:text-xl font-black text-amber-300">13 DEC</p>
+                                <p class="text-[10px] sm:text-xs font-extrabold uppercase tracking-wider text-white">Sunday</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="space-y-1 pt-1">
+                        <h2 class="font-display text-5xl sm:text-7xl md:text-8xl font-black uppercase tracking-wider text-white drop-shadow-[0_6px_24px_rgba(0,0,0,0.75)] leading-none">
+                            WELCOME
+                        </h2>
+                    </div>
+
+                    <p class="font-display text-base sm:text-2xl font-extrabold text-emerald-200 tracking-wide">
+                        {{ tournament_title }}
+                    </p>
+                </div>
+
+                <!-- Bottom Row: Clean Developer Card + Action Buttons -->
+                <div class="relative z-10 flex flex-col lg:flex-row lg:items-end justify-between gap-4 pt-8">
+                    <div class="w-full lg:max-w-md bg-slate-950/92 backdrop-blur-xl border border-amber-400/40 rounded-2xl p-4 shadow-2xl flex items-center gap-3.5 shrink-0">
+                        <div class="relative shrink-0">
+                            <div class="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl overflow-hidden bg-gradient-to-b from-amber-400/30 via-emerald-500/20 to-slate-900 border-2 border-amber-400/70 shadow-xl flex items-end justify-center">
+                                <img
+                                    src="{{ url_for('static', filename='images/developer.png') }}"
+                                    onerror="this.onerror=null;this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22160%22 height=%22160%22 viewBox=%220 0 160 160%22><rect width=%22160%22 height=%22160%22 fill=%22%23064e3b%22/><circle cx=%2280%22 cy=%2258%22 r=%2228%22 fill=%22%23fde68a%22/><path d=%22M26 146c8-30 28-46 54-46s46 16 54 46%22 fill=%22%2310b981%22/></svg>';"
+                                    alt="Raja Faraz Ahmed Turk"
+                                    class="w-full h-full object-cover object-top"
+                                >
+                            </div>
+                            <span class="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-amber-400 text-slate-950 font-display text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full shadow">
+                                DEV
+                            </span>
+                        </div>
+
+                        <div class="min-w-0 flex-1 space-y-1">
+                            <div class="flex flex-wrap items-center justify-between gap-1.5 border-b border-slate-800/90 pb-1">
+                                <span class="font-display text-xs font-black uppercase tracking-[0.14em] text-amber-300">
+                                    TURK DEVELOPER
+                                </span>
+                                <span class="text-[9px] font-bold uppercase tracking-widest text-emerald-300 bg-emerald-500/10 border border-emerald-400/30 px-2 py-0.5 rounded-full">
+                                    Official Builder
+                                </span>
+                            </div>
+
+                            <p class="text-xs sm:text-sm font-bold text-white leading-snug">
+                                Developed by <span class="text-emerald-300 font-extrabold">Raja Faraz Ahmed Turk</span>
+                            </p>
+
+                            <div class="flex flex-wrap items-center justify-between gap-2 pt-0.5 text-xs text-slate-300">
+                                <span class="font-mono font-bold text-amber-200 bg-amber-500/10 border border-amber-400/30 px-2 py-0.5 rounded-lg">
+                                    +92-3013660354
+                                </span>
+                                <span class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">
+                                    {{ max_teams }} Teams &bull; {{ squad_count }} Squad
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center justify-end gap-3 shrink-0">
+                        <button
+                            type="button"
+                            onclick="goToOnboardingStage(3)"
+                            class="text-xs sm:text-sm font-semibold px-4 py-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-slate-600 cursor-pointer transition whitespace-nowrap"
+                        >
+                            Skip to Dashboard
+                        </button>
+
+                        <button
+                            type="button"
+                            onclick="goToOnboardingStage(2)"
+                            class="font-display bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-base sm:text-lg py-3 px-7 rounded-2xl shadow-2xl cursor-pointer transition transform hover:scale-[1.01] whitespace-nowrap"
+                        >
+                            Next &rarr;
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 4D. STAGE 2: TOURNAMENT RULES & REGULATIONS SCREEN (URDU + PRIZE BANNER) -->
+            <section id="rulesScreen" dir="rtl" class="hidden bg-gradient-to-br from-slate-900/95 via-emerald-950/90 to-slate-900/95 backdrop-blur-md border border-emerald-400/40 rounded-3xl p-5 sm:p-9 shadow-2xl space-y-6 text-right">
+                <div class="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-500/25 pb-4">
+                    <div>
+                        <span class="inline-block text-xs font-extrabold px-3.5 py-1 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/40 mb-2">
+                            مرحلہ 2 از 3 &bull; انعامات اور قواعد و ضوابط
+                        </span>
+                        <h2 class="text-2xl sm:text-3xl font-black text-white leading-snug">
+                            ٹورنامنٹ کے انعامات اور قواعد و ضوابط
+                        </h2>
+                        <p class="text-xs sm:text-sm text-slate-300 mt-1 leading-relaxed">
+                            {{ tournament_title }} میں رجسٹریشن یا لائیو میچز دیکھنے سے پہلے انعامات اور تمام قواعد و ضوابط غور سے پڑھ لیں۔
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Top Winner & Runner-Up Prize Banner -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
+                    <div class="bg-gradient-to-l from-amber-500/25 via-amber-400/15 to-slate-950/90 border-2 border-amber-400/60 rounded-2xl p-4 sm:p-5 shadow-xl flex items-center justify-between gap-3">
+                        <div class="space-y-1">
+                            <span class="inline-block text-[11px] font-extrabold px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950">
+                                پہلا انعام &bull; وننگ ٹیم
+                            </span>
+                            <p class="text-lg sm:text-2xl font-black text-amber-300">
+                                6,000 روپے کیش + ٹرافی
+                            </p>
+                            <p class="text-xs text-slate-200">
+                                فائنل جیتنے والی ٹیم کے لیے نقد انعام اور ونر ٹرافی
+                            </p>
+                        </div>
+                        <span class="text-3xl sm:text-4xl shrink-0" aria-hidden="true">&#127942;</span>
+                    </div>
+
+                    <div class="bg-gradient-to-l from-emerald-500/25 via-emerald-400/15 to-slate-950/90 border-2 border-emerald-400/55 rounded-2xl p-4 sm:p-5 shadow-xl flex items-center justify-between gap-3">
+                        <div class="space-y-1">
+                            <span class="inline-block text-[11px] font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-400 text-slate-950">
+                                دوسرا انعام &bull; رنر اپ ٹیم
+                            </span>
+                            <p class="text-lg sm:text-2xl font-black text-emerald-300">
+                                3,000 روپے کیش + ٹرافی
+                            </p>
+                            <p class="text-xs text-slate-200">
+                                فائنل کی رنر اپ ٹیم کے لیے نقد انعام اور رنر اپ ٹرافی
+                            </p>
+                        </div>
+                        <span class="text-3xl sm:text-4xl shrink-0" aria-hidden="true">&#129352;</span>
+                    </div>
+                </div>
+
+                <!-- Rules Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5 sm:gap-4 text-xs sm:text-sm text-slate-200 leading-relaxed">
+                    <div class="bg-slate-950/85 border border-slate-800 rounded-2xl p-4 space-y-1.5">
+                        <p class="font-extrabold text-emerald-300 text-sm sm:text-base">1. میچ اینٹری فیس (3000 روپے)</p>
+                        <p class="text-slate-300">
+                            میچ اینٹری فیس <strong class="text-white">3000</strong> روپے ہے جو اپنے پہلے میچ سے پہلے لازمی کلیئر کروائیں، ورنہ دوسرا میچ نہیں کھلایا جائے گا۔
+                        </p>
+                    </div>
+
+                    <div class="bg-slate-950/85 border border-slate-800 rounded-2xl p-4 space-y-1.5">
+                        <p class="font-extrabold text-emerald-300 text-sm sm:text-base">2. امپائر کا فیصلہ حتمی ہے</p>
+                        <p class="text-slate-300">
+                            امپائر کا فیصلہ حتمی ہو گا اور کمیٹی اس بات کی پابند ہے کہ امپائر کا فیصلہ ہی حتمی رہے۔
+                        </p>
+                    </div>
+
+                    <div class="bg-slate-950/85 border border-slate-800 rounded-2xl p-4 space-y-1.5">
+                        <p class="font-extrabold text-emerald-300 text-sm sm:text-base">3. لوکل کھلاڑیوں کی شرط</p>
+                        <p class="text-slate-300">
+                            یہ لوکل ٹورنامنٹ ہے، اپنے علاقے کے لوکل کھلاڑی ہی ساتھ لائیں، باہر سے کھلاڑی الاؤڈ نہیں ہیں۔
+                        </p>
+                    </div>
+
+                    <div class="bg-slate-950/85 border border-slate-800 rounded-2xl p-4 space-y-1.5">
+                        <p class="font-extrabold text-emerald-300 text-sm sm:text-base">4. ٹیموں کی تعداد اور رجسٹریشن</p>
+                        <p class="text-slate-300">
+                            زیادہ سے زیادہ <strong class="text-white">{{ max_teams }}</strong> ٹیمیں باقاعدہ رجسٹر ہو سکتی ہیں اور ایک موبائل / واٹس ایپ نمبر پر صرف <strong class="text-white">ایک ہی ٹیم</strong> رجسٹر کرنے کی اجازت ہے۔
+                        </p>
+                    </div>
+
+                    <div class="bg-slate-950/85 border border-slate-800 rounded-2xl p-4 space-y-1.5">
+                        <p class="font-extrabold text-emerald-300 text-sm sm:text-base">5. اسکواڈ اور فوٹو تصدیق</p>
+                        <p class="text-slate-300">
+                            ہر ٹیم کو درست ٹیم کا نام، کپتان کا نام، کپتان کی تصویر، شہر اور زیادہ سے زیادہ <strong class="text-white">{{ squad_count }}</strong> کھلاڑیوں کی تفصیلات (بیٹسمین، باؤلر، آل راؤنڈر) جمع کروانا لازمی ہے۔
+                        </p>
+                    </div>
+
+                    <div class="bg-slate-950/85 border border-slate-800 rounded-2xl p-4 space-y-1.5">
+                        <p class="font-extrabold text-emerald-300 text-sm sm:text-base">6. اسٹیٹس، ویٹنگ لسٹ اور گروپس</p>
+                        <p class="text-slate-300">
+                            ٹیموں کا اسٹیٹس انتظامیہ کی جانب سے <strong class="text-white">WAIT</strong>، <strong class="text-white">REGISRD</strong> یا <strong class="text-white">CXL</strong> کیا جاتا ہے اور تصدیق شدہ ٹیموں کو ٹورنامنٹ گروپس میں شامل کیا جاتا ہے۔
+                        </p>
+                    </div>
+
+                    <div class="md:col-span-2 bg-slate-950/85 border border-slate-800 rounded-2xl p-4 space-y-1.5">
+                        <p class="font-extrabold text-emerald-300 text-sm sm:text-base">7. گراؤنڈ پر حاضری اور نظم و ضبط</p>
+                        <p class="text-slate-300">
+                            ٹیمیں مقررہ وقت سے پہلے گراؤنڈ میں رپورٹ کریں۔ کھیل کے دوران نظم و ضبط، اسپورٹس مین اسپرٹ اور اخلاقیات کا خیال رکھنا ہر ٹیم اور کھلاڑی پر لازمی ہے۔
+                        </p>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800">
+                    <button
+                        type="button"
+                        onclick="goToOnboardingStage(1)"
+                        class="px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs sm:text-sm font-bold border border-slate-600 cursor-pointer transition"
+                    >
+                        &rarr; ویلکم اسکرین پر جائیں
+                    </button>
+
+                    <button
+                        type="button"
+                        onclick="goToOnboardingStage(3)"
+                        class="w-full sm:w-auto min-w-[230px] bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm sm:text-base py-3.5 px-7 rounded-2xl shadow-xl cursor-pointer transition"
+                    >
+                        لائیو ڈیش بورڈ پر جائیں &larr;
+                    </button>
+                </div>
+            </section>
+           <!-- 4D. STAGE 2: TOURNAMENT RULES & REGULATIONS SCREEN (URDU) -->
+            <section id="rulesScreen" dir="rtl" class="hidden bg-gradient-to-br from-slate-900/95 via-emerald-950/90 to-slate-900/95 backdrop-blur-md border border-emerald-400/40 rounded-3xl p-5 sm:p-9 shadow-2xl space-y-6 text-right">
+                <div class="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-500/25 pb-4">
+                    <div>
+                        <span class="inline-block text-xs font-extrabold px-3.5 py-1 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/40 mb-2">
+                            مرحلہ 2 از 3 &bull; ٹورنامنٹ کے قواعد و ضوابط
+                        </span>
+                        <h2 class="text-2xl sm:text-3xl font-black text-white leading-snug">
+                            ٹورنامنٹ کے قواعد و ضوابط
+                        </h2>
+                        <p class="text-xs sm:text-sm text-slate-300 mt-1 leading-relaxed">
+                            {{ tournament_title }} میں رجسٹریشن یا لائیو میچز دیکھنے سے پہلے تمام قواعد و ضوابط غور سے پڑھ لیں۔
+                        </p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5 sm:gap-4 text-xs sm:text-sm text-slate-200 leading-relaxed">
+                    <div class="bg-slate-950/85 border border-slate-800 rounded-2xl p-4 space-y-1.5">
+                        <p class="font-extrabold text-emerald-300 text-sm sm:text-base">1. میچ اینٹری فیس (3000 روپے)</p>
+                        <p class="text-slate-300">
+                            میچ اینٹری فیس <strong class="text-white">3000</strong> روپے ہے جو اپنے پہلے میچ سے پہلے لازمی کلیئر کروائیں، ورنہ دوسرا میچ نہیں کھلایا جائے گا۔
+                        </p>
+                    </div>
+
+                    <div class="bg-slate-950/85 border border-slate-800 rounded-2xl p-4 space-y-1.5">
+                        <p class="font-extrabold text-emerald-300 text-sm sm:text-base">2. امپائر کا فیصلہ حتمی ہے</p>
+                        <p class="text-slate-300">
+                            امپائر کا فیصلہ حتمی ہو گا اور کمیٹی اس بات کی پابند ہے کہ امپائر کا فیصلہ ہی حتمی رہے۔
+                        </p>
+                    </div>
+
+                    <div class="bg-slate-950/85 border border-slate-800 rounded-2xl p-4 space-y-1.5">
+                        <p class="font-extrabold text-emerald-300 text-sm sm:text-base">3. لوکل کھلاڑیوں کی شرط</p>
+                        <p class="text-slate-300">
+                            یہ لوکل ٹورنامنٹ ہے، اپنے علاقے کے لوکل کھلاڑی ہی ساتھ لائیں، باہر سے کھلاڑی الاؤڈ نہیں ہیں۔
+                        </p>
+                    </div>
+
+                    <div class="bg-slate-950/85 border border-slate-800 rounded-2xl p-4 space-y-1.5">
+                        <p class="font-extrabold text-emerald-300 text-sm sm:text-base">4. ٹیموں کی تعداد اور رجسٹریشن</p>
+                        <p class="text-slate-300">
+                            زیادہ سے زیادہ <strong class="text-white">{{ max_teams }}</strong> ٹیمیں باقاعدہ رجسٹر ہو سکتی ہیں اور ایک موبائل / واٹس ایپ نمبر پر صرف <strong class="text-white">ایک ہی ٹیم</strong> رجسٹر کرنے کی اجازت ہے۔
+                        </p>
+                    </div>
+
+                    <div class="bg-slate-950/85 border border-slate-800 rounded-2xl p-4 space-y-1.5">
+                        <p class="font-extrabold text-emerald-300 text-sm sm:text-base">5. اسکواڈ اور فوٹو تصدیق</p>
+                        <p class="text-slate-300">
+                            ہر ٹیم کو درست ٹیم کا نام، کپتان کا نام، کپتان کی تصویر، شہر اور زیادہ سے زیادہ <strong class="text-white">{{ squad_count }}</strong> کھلاڑیوں کی تفصیلات (بیٹسمین، باؤلر، آل راؤنڈر) جمع کروانا لازمی ہے۔
+                        </p>
+                    </div>
+
+                    <div class="bg-slate-950/85 border border-slate-800 rounded-2xl p-4 space-y-1.5">
+                        <p class="font-extrabold text-emerald-300 text-sm sm:text-base">6. اسٹیٹس، ویٹنگ لسٹ اور گروپس</p>
+                        <p class="text-slate-300">
+                            ٹیموں کا اسٹیٹس انتظامیہ کی جانب سے <strong class="text-white">WAIT</strong>، <strong class="text-white">REGISRD</strong> یا <strong class="text-white">CXL</strong> کیا جاتا ہے اور تصدیق شدہ ٹیموں کو ٹورنامنٹ گروپس میں شامل کیا جاتا ہے۔
+                        </p>
+                    </div>
+
+                    <div class="md:col-span-2 bg-slate-950/85 border border-slate-800 rounded-2xl p-4 space-y-1.5">
+                        <p class="font-extrabold text-emerald-300 text-sm sm:text-base">7. گراؤنڈ پر حاضری اور نظم و ضبط</p>
+                        <p class="text-slate-300">
+                            ٹیمیں مقررہ وقت سے پہلے گراؤنڈ میں رپورٹ کریں۔ کھیل کے دوران نظم و ضبط، اسپورٹس مین اسپرٹ اور اخلاقیات کا خیال رکھنا ہر ٹیم اور کھلاڑی پر لازمی ہے۔
+                        </p>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800">
+                    <button
+                        type="button"
+                        onclick="goToOnboardingStage(1)"
+                        class="px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs sm:text-sm font-bold border border-slate-600 cursor-pointer transition"
+                    >
+                        &rarr; ویلکم اسکرین پر جائیں
+                    </button>
+
+                    <button
+                        type="button"
+                        onclick="goToOnboardingStage(3)"
+                        class="w-full sm:w-auto min-w-[230px] bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm sm:text-base py-3.5 px-7 rounded-2xl shadow-xl cursor-pointer transition"
+                    >
+                        لائیو ڈیش بورڈ پر جائیں &larr;
+                    </button>
+                </div>
+            </section>
+            <!-- 4E. STAGE 3: LIVE USER DASHBOARD -->
+            <div id="liveUserDashboard" class="hidden space-y-6 sm:space-y-8">
+                <section class="bg-gradient-to-r from-emerald-950/90 via-slate-900/90 to-emerald-950/90 backdrop-blur-md p-6 sm:p-9 rounded-2xl border border-emerald-400/35 shadow-2xl text-center space-y-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-emerald-300 font-bold">
+                        Live User Dashboard &bull; One Team Per Mobile Number
+                    </p>
+                    <h2 class="font-display text-xl sm:text-3xl font-extrabold text-white">
+                        Register Your Squad for {{ tournament_title }}
+                    </h2>
+                    <p class="text-xs sm:text-sm text-slate-300 max-w-xl mx-auto">
+                        Click the button below to open the full team registration form with captain photo and up to {{ squad_count }} players.
+                    </p>
+
+                    {% if total >= max_teams %}
+                        <div class="inline-block bg-rose-500/20 border border-rose-500/40 text-rose-200 px-6 py-3 rounded-xl text-sm font-bold">
+                            Registration Closed ({{ max_teams }} / {{ max_teams }} Full)
+                        </div>
+                    {% else %}
+                        <div class="pt-1">
+                            <button
+                                type="button"
+                                onclick="openRegistrationModal()"
+                                class="font-display w-full sm:w-auto min-w-[260px] sm:min-w-[360px] bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-base sm:text-xl py-4 sm:py-5 px-8 rounded-2xl shadow-xl transition transform hover:scale-[1.01] cursor-pointer"
+                            >
+                                Register Team Now
+                            </button>
+                        </div>
+                    {% endif %}
+                </section>
+
+                <section class="bg-slate-900/85 backdrop-blur-md p-4 sm:p-6 rounded-2xl border border-emerald-400/30 shadow-2xl space-y-4">
+                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                        <div>
+                            <h2 class="font-display text-lg sm:text-2xl font-extrabold text-white">Today's Match Spotlight</h2>
+                            <p class="text-xs text-slate-300 mt-0.5">
+                                Matches play one by one in full-size spotlight with captain photos and team names.
+                            </p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span id="publicMatchesBadge" class="text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 px-3 py-1 rounded-full">
+                                {{ matches|length }} Matches
+                            </span>
+                        </div>
+                    </div>
+
+                    <div id="publicMatchAdStage"></div>
+                </section>
+
+                <section class="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-7">
+                    <div class="lg:col-span-7 bg-slate-900/80 backdrop-blur-md p-4 sm:p-6 rounded-2xl border border-emerald-400/25 shadow-2xl space-y-4">
+                        <div class="border-b border-slate-800 pb-3">
+                            <h2 class="font-display text-lg sm:text-xl font-bold text-white">Tournament Groups</h2>
+                            <p class="text-xs text-slate-300 mt-0.5">Teams placed into groups by Admin appear live here.</p>
+                        </div>
+                        <div id="publicGroupsGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-3.5"></div>
+                    </div>
+
+                    <div class="lg:col-span-5 bg-slate-900/80 backdrop-blur-md p-4 sm:p-6 rounded-2xl border border-emerald-400/25 shadow-2xl space-y-4">
+                        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                            <div>
+                                <h2 class="font-display text-lg sm:text-xl font-bold text-white">Registered Teams</h2>
+                                <p class="text-xs text-slate-300 mt-0.5">Click View on any team to see its squad.</p>
+                            </div>
+                            <span id="publicTeamsCountBadge" class="text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 px-3 py-1 rounded-full">
+                                {{ total }} / {{ max_teams }}
+                            </span>
+                        </div>
+                        <div id="publicTeamsContainer" class="space-y-3 max-h-[34rem] overflow-y-auto pr-1"></div>
+                    </div>
+                </section>
+            </div>
+        {% endif %}
+
+    </main>
+
+    <!-- ===================================================================== -->
+    <!-- SECTION 5: MODALS (REGISTRATION, FULL EDIT, ADMIN & SQUAD VIEW)     -->
+    <!-- ===================================================================== -->
+    <!-- 5A. Registration Modal -->
+    <div id="registrationModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/85 backdrop-blur-md p-3 sm:p-6 overflow-y-auto">
+        <div class="bg-slate-900 border border-emerald-400/35 rounded-2xl max-w-3xl w-full p-4 sm:p-7 shadow-2xl my-auto max-h-[92vh] overflow-y-auto space-y-4">
+            <div class="flex items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                <div>
+                    <h3 class="font-display text-lg sm:text-2xl font-extrabold text-white">Team Registration</h3>
+                    <p class="text-xs text-slate-300 mt-0.5">
+                        One mobile number can register only one team. Captain photo + up to {{ squad_count }} players.
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    onclick="closeRegistrationModal()"
+                    class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold border border-slate-600 cursor-pointer"
+                >
+                    Close
+                </button>
+            </div>
+
+            {% if error_message %}
+                <div class="bg-rose-500/20 border border-rose-400/50 text-rose-200 px-4 py-3 rounded-xl text-xs sm:text-sm font-semibold">
+                    {{ error_message }}
+                </div>
+            {% endif %}
+
+            {% if total >= max_teams %}
+                <div class="bg-rose-500/20 border border-rose-500/40 text-rose-200 p-5 rounded-xl text-center font-semibold text-sm">
+                    Registration Closed. All {{ max_teams }} available team slots have been filled.
+                </div>
+            {% else %}
+                <form method="POST" enctype="multipart/form-data" class="space-y-3.5 sm:space-y-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
+                        <div>
+                            <label for="team_name" class="block text-xs sm:text-sm font-medium text-slate-200 mb-1">
+                                Team Name
+                            </label>
+                            <input
+                                id="team_name"
+                                type="text"
+                                name="team_name"
+                                required
+                                placeholder="e.g. Royal Strikers"
+                                class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/90 border border-slate-700 text-sm text-white placeholder-slate-400 focus:border-emerald-400 outline-none"
+                            >
+                        </div>
+
+                        <div>
+                            <label for="captain_name" class="block text-xs sm:text-sm font-medium text-slate-200 mb-1">
+                                Captain Name
+                            </label>
+                            <input
+                                id="captain_name"
+                                type="text"
+                                name="captain_name"
+                                required
+                                placeholder="Enter captain full name"
+                                class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/90 border border-slate-700 text-sm text-white placeholder-slate-400 focus:border-emerald-400 outline-none"
+                            >
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-950/75 border border-slate-800 rounded-xl p-3 sm:p-3.5">
+                        <label for="captain_image" class="block text-xs sm:text-sm font-medium text-slate-200 mb-2">
+                            Captain Photo (JPG, PNG, WEBP)
+                        </label>
+                        <div class="flex items-center gap-3">
+                            <img
+                                id="captainPreview"
+                                src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'><rect width='64' height='64' rx='32' fill='%231e293b'/><circle cx='32' cy='24' r='11' fill='%2364748b'/><path d='M12 54c3-10 11-16 20-16s17 6 20 16' fill='%2364748b'/></svg>"
+                                alt="Captain Preview"
+                                class="w-12 h-12 sm:w-14 sm:h-14 rounded-full object-cover border border-emerald-400/50 bg-slate-800 shrink-0"
+                            >
+                            <input
+                                id="captain_image"
+                                type="file"
+                                name="captain_image"
+                                accept="image/*"
+                                onchange="previewFile(this, 'captainPreview')"
+                                class="block w-full text-xs text-slate-300 file:mr-2.5 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-emerald-500 file:text-slate-950 hover:file:bg-emerald-400 cursor-pointer"
+                            >
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
+                        <div>
+                            <label for="phone" class="block text-xs sm:text-sm font-medium text-slate-200 mb-1">
+                                Contact / WhatsApp Number (One Team Per Number)
+                            </label>
+                            <input
+                                id="phone"
+                                type="text"
+                                name="phone"
+                                required
+                                placeholder="e.g. 0300-1234567"
+                                class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/90 border border-slate-700 text-sm text-white placeholder-slate-400 focus:border-emerald-400 outline-none"
+                            >
+                        </div>
+
+                        <div>
+                            <label for="city" class="block text-xs sm:text-sm font-medium text-slate-200 mb-1">
+                                City / Area
+                            </label>
+                            <input
+                                id="city"
+                                type="text"
+                                name="city"
+                                required
+                                placeholder="Enter city or locality"
+                                class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/90 border border-slate-700 text-sm text-white placeholder-slate-400 focus:border-emerald-400 outline-none"
+                            >
+                        </div>
+                    </div>
+
+                    <div class="pt-1">
+                        <div class="flex items-center justify-between gap-2 mb-2">
+                            <label class="text-xs sm:text-sm font-semibold text-emerald-300">
+                                Remaining {{ squad_count }} Squad Members (Name, Photo &amp; Role)
+                            </label>
+                            <span class="text-[11px] text-slate-300 shrink-0">Scroll {{ squad_count }}</span>
+                        </div>
+
+                        <div class="max-h-64 overflow-y-auto space-y-2.5 pr-1 bg-slate-950/80 p-2.5 sm:p-3 rounded-xl border border-slate-800">
+                            {% for i in range(1, squad_count + 1) %}
+                            <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5 sm:p-3 space-y-2">
+                                <div class="flex items-center justify-between gap-2">
+                                    <span class="text-xs font-bold text-slate-200">Player #{{ i }}</span>
+                                    <select
+                                        name="player_role_{{ i }}"
+                                        class="text-xs bg-slate-800 text-emerald-300 border border-slate-700 rounded-lg px-2.5 py-1.5 focus:border-emerald-400 outline-none"
+                                    >
+                                        <option value="Batsman">Batsman</option>
+                                        <option value="Bowler">Bowler</option>
+                                        <option value="All Rounder" selected>All Rounder</option>
+                                    </select>
+                                </div>
+
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 items-center">
+                                    <input
+                                        type="text"
+                                        name="player_name_{{ i }}"
+                                        placeholder="Player {{ i }} full name"
+                                        class="w-full px-3 py-2 rounded-lg bg-slate-800/90 border border-slate-700 text-xs text-white placeholder-slate-400 focus:border-emerald-400 outline-none"
+                                    >
+
+                                    <div class="flex items-center gap-2">
+                                        <img
+                                            id="playerPreview_{{ i }}"
+                                            src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='36' height='36' viewBox='0 0 36 36'><rect width='36' height='36' rx='18' fill='%230f172a'/><circle cx='18' cy='14' r='6' fill='%23475569'/><path d='M7 31c2-5 6-8 11-8s9 3 11 8' fill='%23475569'/></svg>"
+                                            alt="Player {{ i }}"
+                                            class="w-9 h-9 rounded-full object-cover border border-slate-600 bg-slate-800 shrink-0"
+                                        >
+                                        <input
+                                            type="file"
+                                            name="player_image_{{ i }}"
+                                            accept="image/*"
+                                            onchange="previewFile(this, 'playerPreview_{{ i }}')"
+                                            class="block w-full text-[11px] text-slate-300 file:mr-2 file:py-1.5 file:px-2.5 file:rounded-md file:border-0 file:text-[11px] file:font-semibold file:bg-slate-700 file:text-slate-100 hover:file:bg-slate-600 cursor-pointer"
+                                        >
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <button
+                        type="submit"
+                        class="w-full mt-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-3 px-4 rounded-xl transition cursor-pointer shadow-md text-sm sm:text-base"
+                    >
+                        Submit Team Registration
+                    </button>
+                </form>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- 5B. Full Team Edit Modal (Admin) -->
+    <div id="editTeamModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/85 backdrop-blur-md p-3 sm:p-6 overflow-y-auto">
+        <div class="bg-slate-900 border border-sky-400/40 rounded-2xl max-w-3xl w-full p-4 sm:p-7 shadow-2xl my-auto max-h-[92vh] overflow-y-auto space-y-4">
+            <div class="flex items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                <div>
+                    <h3 class="font-display text-lg sm:text-2xl font-extrabold text-white">Edit Team &amp; Squad</h3>
+                    <p class="text-xs text-slate-300 mt-0.5">
+                        Update team name, captain info/photo, and any of the {{ squad_count }} squad players.
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    onclick="closeEditTeamModal()"
+                    class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold border border-slate-600 cursor-pointer"
+                >
+                    Close
+                </button>
+            </div>
+
+            <form id="editTeamForm" method="POST" enctype="multipart/form-data" class="space-y-4">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                        <label for="edit_team_name" class="block text-xs sm:text-sm font-medium text-slate-200 mb-1">
+                            Team Name
+                        </label>
+                        <input
+                            id="edit_team_name"
+                            type="text"
+                            name="team_name"
+                            required
+                            class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white focus:border-sky-400 outline-none"
+                        >
+                    </div>
+
+                    <div>
+                        <label for="edit_captain_name" class="block text-xs sm:text-sm font-medium text-slate-200 mb-1">
+                            Captain Name
+                        </label>
+                        <input
+                            id="edit_captain_name"
+                            type="text"
+                            name="captain_name"
+                            required
+                            class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white focus:border-sky-400 outline-none"
+                        >
+                    </div>
+                </div>
+
+                <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5">
+                    <label for="edit_captain_image" class="block text-xs sm:text-sm font-medium text-slate-200 mb-2">
+                        Captain Photo (Leave empty to keep current photo)
+                    </label>
+                    <div class="flex items-center gap-3">
+                        <img
+                            id="editCaptainPreview"
+                            src=""
+                            alt="Captain Preview"
+                            class="w-14 h-14 rounded-full object-cover object-top border border-sky-400/50 bg-slate-800 shrink-0"
+                        >
+                        <input
+                            id="edit_captain_image"
+                            type="file"
+                            name="captain_image"
+                            accept="image/*"
+                            onchange="previewFile(this, 'editCaptainPreview')"
+                            class="block w-full text-xs text-slate-300 file:mr-2.5 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-sky-500 file:text-slate-950 hover:file:bg-sky-400 cursor-pointer"
+                        >
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                        <label for="edit_phone" class="block text-xs sm:text-sm font-medium text-slate-200 mb-1">
+                            Contact / WhatsApp Number
+                        </label>
+                        <input
+                            id="edit_phone"
+                            type="text"
+                            name="phone"
+                            required
+                            class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white focus:border-sky-400 outline-none"
+                        >
+                    </div>
+
+                    <div>
+                        <label for="edit_city" class="block text-xs sm:text-sm font-medium text-slate-200 mb-1">
+                            City / Area
+                        </label>
+                        <input
+                            id="edit_city"
+                            type="text"
+                            name="city"
+                            required
+                            class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white focus:border-sky-400 outline-none"
+                        >
+                    </div>
+                </div>
+
+                <div class="pt-1">
+                    <div class="flex items-center justify-between gap-2 mb-2">
+                        <label class="text-xs sm:text-sm font-semibold text-sky-300">
+                            Edit {{ squad_count }} Squad Members (Name, Photo &amp; Role)
+                        </label>
+                        <span class="text-[11px] text-slate-300">Scroll {{ squad_count }}</span>
+                    </div>
+
+                    <div id="editSquadListContainer" class="max-h-64 overflow-y-auto space-y-2.5 pr-1 bg-slate-950/80 p-3 rounded-xl border border-slate-800"></div>
+                </div>
+
+                <button
+                    type="submit"
+                    class="w-full bg-sky-500 hover:bg-sky-400 text-slate-950 font-extrabold py-3 px-4 rounded-xl transition cursor-pointer shadow-md text-sm sm:text-base"
+                >
+                    Save Changes
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 5C. Admin Login Modal -->
+    <div id="adminLoginModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+        <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+            <div class="flex items-center justify-between">
+                <h3 class="font-display text-lg font-bold text-white">Admin Login</h3>
+                <button type="button" onclick="closeAdminModal()" class="text-slate-400 hover:text-white text-sm font-bold cursor-pointer">
+                    X
+                </button>
+            </div>
+            <form method="POST" action="{{ url_for('admin_login') }}" class="space-y-3">
+                <div>
+                    <label class="block text-xs text-slate-300 mb-1">Admin ID</label>
+                    <input
+                        type="text"
+                        name="admin_id"
+                        required
+                        placeholder="admin"
+                        class="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-sm text-white outline-none focus:border-emerald-400"
+                    >
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-300 mb-1">Password</label>
+                    <input
+                        type="password"
+                        name="admin_pass"
+                        required
+                        placeholder="Enter password"
+                        class="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-sm text-white outline-none focus:border-emerald-400"
+                    >
+                </div>
+                <button
+                    type="submit"
+                    class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-2.5 rounded-xl text-sm cursor-pointer"
+                >
+                    Sign In as Admin
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 5D. Single Team Players View Modal -->
+    <div id="teamShowcaseModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/85 backdrop-blur-md p-3 sm:p-6 overflow-y-auto">
+        <div class="bg-gradient-to-b from-emerald-950 via-slate-900 to-slate-950 border border-emerald-400/35 rounded-2xl max-w-6xl w-full p-4 sm:p-6 shadow-2xl my-auto max-h-[92vh] overflow-y-auto space-y-4">
+            <div class="flex items-center justify-between gap-3 border-b border-emerald-500/25 pb-3">
+                <div>
+                    <p class="text-[11px] uppercase tracking-widest text-emerald-300 font-semibold">
+                        {{ tournament_title }}
+                    </p>
+                    <h3 id="showcaseTeamTitle" class="font-display text-lg sm:text-2xl font-extrabold text-white mt-0.5"></h3>
+                    <p id="showcaseTeamMeta" class="text-xs text-emerald-100/90 mt-1"></p>
+                </div>
+                <button
+                    type="button"
+                    onclick="closeTeamShowcase()"
+                    class="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold border border-slate-600 cursor-pointer"
+                >
+                    Close
+                </button>
+            </div>
+
+            <div id="showcaseRosterGrid" class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4"></div>
+        </div>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- SECTION 6: FOOTER                                                     -->
+    <!-- ===================================================================== -->
+    <footer class="border-t border-slate-800/80 bg-slate-950/75 backdrop-blur-sm py-4 sm:py-5 px-3 sm:px-4 text-center text-xs text-slate-300">
+        {{ footer_tournament_title }} &bull; TURK DEVELOPER &bull; Raja Faraz Ahmed Turk (+92-3013660354)
+    </footer>
+
+    <!-- ===================================================================== -->
+    <!-- SECTION 7: CLIENT SCRIPTS (ONBOARDING, EDIT MODAL, LIVE SYNC & BG)  -->
+    <!-- ===================================================================== -->
+    <script>
+        // 7A. State & Constants
+        const IS_ADMIN = {{ is_admin | tojson }};
+        const OPEN_REG_MODAL = {{ open_reg_modal | tojson }};
+        const SQUAD_COUNT = {{ squad_count | tojson }};
+        const STATIC_BASE = {{ url_for('static', filename='') | tojson }};
+        const DEFAULT_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='420' height='420' viewBox='0 0 420 420'><rect width='420' height='420' fill='%23064e3b'/><circle cx='210' cy='155' r='68' fill='%23a7f3d0'/><path d='M68 380c20-72 72-114 142-114s122 42 142 114' fill='%2310b981'/></svg>";
+
+        let TEAMS_DATA = {{ teams | tojson }};
+        let GROUPS_DATA = {{ groups | tojson }};
+        let MATCHES_DATA = {{ matches | tojson }};
+        let adMatchIndex = 0;
+        let adMatchTimer = null;
+
+        // 7B. Onboarding Navigation (Welcome -> Rules -> Live Dashboard)
+        function goToOnboardingStage(stageNum) {
+            if (IS_ADMIN) return;
+            const welcomeEl = document.getElementById("welcomeScreen");
+            const rulesEl = document.getElementById("rulesScreen");
+            const dashEl = document.getElementById("liveUserDashboard");
+            if (!welcomeEl || !rulesEl || !dashEl) return;
+
+            welcomeEl.classList.add("hidden");
+            rulesEl.classList.add("hidden");
+            dashEl.classList.add("hidden");
+
+            if (stageNum === 2) {
+                rulesEl.classList.remove("hidden");
+            } else if (stageNum === 3) {
+                dashEl.classList.remove("hidden");
+                startAdMatchAutoPlay();
+            } else {
+                welcomeEl.classList.remove("hidden");
+            }
+            window.scrollTo({ top: 0, behavior: "smooth" });
+        }
+
+        // 7C. Modal Controls & Full Edit Loader
+        function openRegistrationModal() {
+            const m = document.getElementById("registrationModal");
+            if (!m) return;
+            m.classList.remove("hidden");
+            m.classList.add("flex");
+        }
+
+        function closeRegistrationModal() {
+            const m = document.getElementById("registrationModal");
+            if (!m) return;
+            m.classList.add("hidden");
+            m.classList.remove("flex");
+        }
+
+        function openTeamEditById(teamId) {
+            const team = TEAMS_DATA.find((t) => Number(t.id) === Number(teamId));
+            if (!team) return;
+
+            const form = document.getElementById("editTeamForm");
+            form.action = `/admin/team/${team.id}/edit`;
+
+            document.getElementById("edit_team_name").value = team.team_name || "";
+            document.getElementById("edit_captain_name").value = team.captain_name || "";
+            document.getElementById("edit_phone").value = team.phone || "";
+            document.getElementById("edit_city").value = team.city || "";
+            document.getElementById("editCaptainPreview").src = resolveImg(team.captain_image);
+
+            const bySlot = {};
+            (team.squad_raw || []).forEach((item, idx) => {
+                const slot = typeof item.slot === "number" ? item.slot : idx + 1;
+                bySlot[slot] = item;
+            });
+
+            const squadBox = document.getElementById("editSquadListContainer");
+            let rowsHtml = "";
+            for (let i = 1; i <= SQUAD_COUNT; i++) {
+                const entry = bySlot[i] || {};
+                const pName = entry.name || "";
+                const pRole = entry.role || "All Rounder";
+                const pImg = entry.image || "";
+
+                rowsHtml += `
+                    <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5 space-y-2">
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="text-xs font-bold text-slate-200">Player #${i}</span>
+                            <select
+                                name="edit_player_role_${i}"
+                                class="text-xs bg-slate-800 text-sky-300 border border-slate-700 rounded-lg px-2.5 py-1 outline-none"
+                            >
+                                <option value="Batsman" ${pRole === "Batsman" ? "selected" : ""}>Batsman</option>
+                                <option value="Bowler" ${pRole === "Bowler" ? "selected" : ""}>Bowler</option>
+                                <option value="All Rounder" ${pRole === "All Rounder" ? "selected" : ""}>All Rounder</option>
+                            </select>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 items-center">
+                            <input
+                                type="text"
+                                name="edit_player_name_${i}"
+                                value="${escapeHtml(pName)}"
+                                placeholder="Player ${i} full name"
+                                class="w-full px-3 py-1.5 rounded-lg bg-slate-800/90 border border-slate-700 text-xs text-white placeholder-slate-400 focus:border-sky-400 outline-none"
+                            >
+                            <div class="flex items-center gap-2">
+                                <img
+                                    id="editPlayerPreview_${i}"
+                                    src="${resolveImg(pImg)}"
+                                    alt="Player ${i}"
+                                    class="w-9 h-9 rounded-full object-cover object-top border border-slate-600 bg-slate-800 shrink-0"
+                                >
+                                <input
+                                    type="file"
+                                    name="edit_player_image_${i}"
+                                    accept="image/*"
+                                    onchange="previewFile(this, 'editPlayerPreview_${i}')"
+                                    class="block w-full text-[11px] text-slate-300 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[11px] file:font-semibold file:bg-slate-700 file:text-slate-100 hover:file:bg-slate-600 cursor-pointer"
+                                >
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            squadBox.innerHTML = rowsHtml;
+
+            const modal = document.getElementById("editTeamModal");
+            modal.classList.remove("hidden");
+            modal.classList.add("flex");
+        }
+
+        function closeEditTeamModal() {
+            const modal = document.getElementById("editTeamModal");
+            modal.classList.add("hidden");
+            modal.classList.remove("flex");
+        }
+
+        function openAdminModal() {
+            const m = document.getElementById("adminLoginModal");
+            m.classList.remove("hidden");
+            m.classList.add("flex");
+        }
+
+        function closeAdminModal() {
+            const m = document.getElementById("adminLoginModal");
+            m.classList.add("hidden");
+            m.classList.remove("flex");
+        }
+
+        function escapeHtml(str) {
+            return String(str || "")
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;");
+        }
+
+        function resolveImg(imgPath) {
+            return imgPath ? `${STATIC_BASE}${imgPath}` : DEFAULT_AVATAR;
+        }
+
+        function statusBadgeHtml(status) {
+            if (status === "REGISRD") {
+                return `<span class="shrink-0 text-[11px] bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 px-2.5 py-0.5 rounded-full font-bold">REGISRD</span>`;
+            }
+            if (status === "CXL") {
+                return `<span class="shrink-0 text-[11px] bg-rose-500/20 text-rose-300 border border-rose-400/40 px-2.5 py-0.5 rounded-full font-bold">CXL</span>`;
+            }
+            return `<span class="shrink-0 text-[11px] bg-amber-500/20 text-amber-300 border border-amber-400/40 px-2.5 py-0.5 rounded-full font-bold">WAIT</span>`;
+        }
+
+        function openTeamViewById(teamId) {
+            const team = TEAMS_DATA.find((t) => Number(t.id) === Number(teamId));
+            if (!team) return;
+
+            document.getElementById("showcaseTeamTitle").textContent =
+                `${team.team_name} — ${team.status}`;
+            document.getElementById("showcaseTeamMeta").textContent =
+                `Team: ${team.team_name} | Captain: ${team.captain_name} | City: ${team.city}${team.group_name ? " | " + team.group_name : ""}`;
+
+            const grid = document.getElementById("showcaseRosterGrid");
+            const cards = team.roster_cards || [];
+
+            grid.innerHTML = cards.map((player) => `
+                <div class="flex flex-col items-center">
+                    <div class="w-full aspect-square rounded-t-xl overflow-hidden bg-gradient-to-b from-emerald-700/60 to-emerald-950/90 border border-emerald-400/25 flex items-end justify-center">
+                        <img
+                            src="${resolveImg(player.image)}"
+                            alt="${escapeHtml(player.name)}"
+                            class="w-full h-full object-cover object-top"
+                        >
+                    </div>
+                    <div class="w-full bg-white text-slate-950 py-1.5 px-2 text-center shadow">
+                        <div class="text-[10px] font-extrabold uppercase text-emerald-900 tracking-wide truncate">
+                            ${escapeHtml(team.team_name)}
+                        </div>
+                        <div class="font-black text-xs sm:text-sm uppercase tracking-tight truncate">
+                            ${escapeHtml(player.name)}
+                        </div>
+                        <div class="text-[10px] font-bold uppercase text-slate-700 tracking-wider">
+                            ${escapeHtml(player.role)}
+                        </div>
+                    </div>
+                </div>
+            `).join("");
+
+            const modal = document.getElementById("teamShowcaseModal");
+            modal.classList.remove("hidden");
+            modal.classList.add("flex");
+        }
+
+        function closeTeamShowcase() {
+            const modal = document.getElementById("teamShowcaseModal");
+            modal.classList.add("hidden");
+            modal.classList.remove("flex");
+        }
+
+        // 7D. Admin Renderers (Pool, Side Tracker, Groups & Matches)
+        function renderAdminPool() {
+            const container = document.getElementById("adminPoolContainer");
+            if (!container) return;
+
+            const activePoolTeams = TEAMS_DATA.filter((t) => t.status !== "CXL");
+
+            if (!activePoolTeams.length) {
+                container.innerHTML = `
+                    <div class="col-span-full bg-slate-950/70 border border-slate-800 rounded-xl p-6 text-center text-xs sm:text-sm text-slate-300">
+                        No active teams in the top pool right now (cancelled teams are listed in the side CXL list).
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = activePoolTeams.map((team) => {
+                const isReg = team.status === "REGISRD";
+                const isWait = team.status === "WAIT";
+
+                return `
+                    <div class="bg-slate-950/85 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-between gap-3">
+                        <div class="flex items-center justify-between gap-2">
+                            <div class="flex items-center gap-3 min-w-0">
+                                <img
+                                    src="${resolveImg(team.captain_image)}"
+                                    alt="${escapeHtml(team.captain_name)}"
+                                    class="w-11 h-11 rounded-full object-cover object-top border border-emerald-400/60 bg-slate-800 shrink-0"
+                                >
+                                <div class="min-w-0">
+                                    <p class="font-bold text-white text-sm truncate">${escapeHtml(team.team_name)}</p>
+                                    <p class="text-xs text-slate-300 truncate">
+                                        Cap: <span class="text-white">${escapeHtml(team.captain_name)}</span>
+                                    </p>
+                                    <p class="text-[11px] text-emerald-300 truncate">
+                                        ${team.group_name ? escapeHtml(team.group_name) : "In Pool"}
+                                    </p>
+                                </div>
+                            </div>
+                            ${statusBadgeHtml(team.status)}
+                        </div>
+
+                        <div class="flex flex-wrap items-center justify-between gap-1.5 pt-2 border-t border-slate-800/90">
+                            <div class="flex items-center gap-1">
+                                <button
+                                    type="button"
+                                    onclick="openTeamViewById(${team.id})"
+                                    class="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 cursor-pointer"
+                                >
+                                    View
+                                </button>
+                                <button
+                                    type="button"
+                                    onclick="openTeamEditById(${team.id})"
+                                    class="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 cursor-pointer"
+                                >
+                                    Edit
+                                </button>
+                            </div>
+
+                            <form method="POST" action="/admin/team/${team.id}/status" class="flex items-center gap-1">
+                                <button
+                                    type="submit"
+                                    name="status"
+                                    value="REGISRD"
+                                    class="text-[11px] font-bold px-2 py-1 rounded-lg border cursor-pointer ${isReg ? "bg-emerald-500 text-slate-950 border-emerald-400" : "bg-slate-800 text-emerald-300 border-slate-700 hover:bg-slate-700"}"
+                                >
+                                    REGISRD
+                                </button>
+                                <button
+                                    type="submit"
+                                    name="status"
+                                    value="WAIT"
+                                    class="text-[11px] font-bold px-2 py-1 rounded-lg border cursor-pointer ${isWait ? "bg-amber-400 text-slate-950 border-amber-300" : "bg-slate-800 text-amber-300 border-slate-700 hover:bg-slate-700"}"
+                                >
+                                    WAIT
+                                </button>
+                                <button
+                                    type="submit"
+                                    name="status"
+                                    value="CXL"
+                                    class="text-[11px] font-bold px-2 py-1 rounded-lg border cursor-pointer bg-slate-800 text-rose-300 border-slate-700 hover:bg-rose-600 hover:text-white"
+                                >
+                                    CXL
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                `;
+            }).join("");
+        }
+
+        function renderSideStatusList() {
+            const sideBox = document.getElementById("sideStatusListContainer");
+            if (!sideBox) return;
+
+            const regTeams = TEAMS_DATA.filter((t) => t.status === "REGISRD");
+            const cxlTeams = TEAMS_DATA.filter((t) => t.status === "CXL");
+            const waitTeams = TEAMS_DATA.filter((t) => t.status === "WAIT");
+
+            const sections = [
+                {
+                    title: "REGISRD TEAMS",
+                    list: regTeams,
+                    headerClass: "text-emerald-300 border-emerald-500/30 bg-emerald-950/40",
+                    emptyText: "No registered teams yet."
+                },
+                {
+                    title: "CXL TEAMS",
+                    list: cxlTeams,
+                    headerClass: "text-rose-300 border-rose-500/30 bg-rose-950/40",
+                    emptyText: "No cancelled teams."
+                },
+                {
+                    title: "WAIT LIST TEAMS",
+                    list: waitTeams,
+                    headerClass: "text-amber-300 border-amber-500/30 bg-amber-950/40",
+                    emptyText: "No teams on waiting list."
+                }
+            ];
+
+            sideBox.innerHTML = sections.map((sec) => {
+                const itemsHtml = sec.list.length
+                    ? sec.list.map((t) => `
+                        <div class="flex items-center justify-between gap-2 bg-slate-950/90 border border-slate-800 rounded-xl px-3 py-2">
+                            <div class="flex items-center gap-2.5 min-w-0">
+                                <img
+                                    src="${resolveImg(t.captain_image)}"
+                                    alt="${escapeHtml(t.team_name)}"
+                                    class="w-9 h-9 rounded-full object-cover object-top border border-slate-600 shrink-0"
+                                >
+                                <div class="min-w-0">
+                                    <p class="text-xs font-bold text-white truncate">${escapeHtml(t.team_name)}</p>
+                                    <p class="text-[11px] text-slate-400 truncate">
+                                        ${t.group_name ? escapeHtml(t.group_name) : escapeHtml(t.captain_name)}
+                                    </p>
+                                </div>
+                            </div>
+                            <form method="POST" action="/admin/team/${t.id}/status" class="flex items-center gap-1 shrink-0">
+                                <button
+                                    type="submit"
+                                    name="status"
+                                    value="REGISRD"
+                                    class="text-[10px] font-bold px-1.5 py-1 rounded bg-slate-800 hover:bg-emerald-500 hover:text-slate-950 text-emerald-300 cursor-pointer"
+                                    title="Mark REGISRD"
+                                >
+                                    REG
+                                </button>
+                                <button
+                                    type="submit"
+                                    name="status"
+                                    value="WAIT"
+                                    class="text-[10px] font-bold px-1.5 py-1 rounded bg-slate-800 hover:bg-amber-400 hover:text-slate-950 text-amber-300 cursor-pointer"
+                                    title="Mark WAIT"
+                                >
+                                    WAIT
+                                </button>
+                                <button
+                                    type="submit"
+                                    name="status"
+                                    value="CXL"
+                                    class="text-[10px] font-bold px-1.5 py-1 rounded bg-slate-800 hover:bg-rose-600 text-rose-300 hover:text-white cursor-pointer"
+                                    title="Mark CXL"
+                                >
+                                    CXL
+                                </button>
+                            </form>
+                        </div>
+                    `).join("")
+                    : `<p class="text-xs text-slate-400 py-1.5 px-1">${sec.emptyText}</p>`;
+
+                return `
+                    <div class="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/60">
+                        <div class="flex items-center justify-between px-3 py-2 border-b ${sec.headerClass}">
+                            <span class="text-xs font-extrabold tracking-wide">${sec.title}</span>
+                            <span class="text-xs font-bold bg-slate-900/90 text-white px-2 py-0.5 rounded-full">
+                                ${sec.list.length}
+                            </span>
+                        </div>
+                        <div class="p-2.5 space-y-2 max-h-48 overflow-y-auto">
+                            ${itemsHtml}
+                        </div>
+                    </div>
+                `;
+            }).join("");
+        }
+
+        function renderAdminGroups() {
+            const grid = document.getElementById("adminGroupsGrid");
+            if (!grid) return;
+
+            const selectableTeams = TEAMS_DATA.filter((t) => t.status !== "CXL");
+
+            grid.innerHTML = GROUPS_DATA.map((grp) => {
+                const optionsHtml = selectableTeams.length
+                    ? selectableTeams.map((t) => `
+                        <option value="${t.id}">
+                            ${escapeHtml(t.team_name)} (${escapeHtml(t.status)})
+                        </option>
+                    `).join("")
+                    : `<option value="">No teams available</option>`;
+
+                const assignedHtml = (grp.teams || []).length
+                    ? (grp.teams || []).map((t) => `
+                        <div class="flex items-center justify-between gap-2 bg-slate-900/90 border border-slate-800 rounded-xl px-3 py-2">
+                            <div class="flex items-center gap-2.5 min-w-0">
+                                <img
+                                    src="${resolveImg(t.captain_image)}"
+                                    alt="${escapeHtml(t.captain_name)}"
+                                    class="w-9 h-9 rounded-full object-cover object-top border border-emerald-400/50 shrink-0"
+                                >
+                                <div class="min-w-0">
+                                    <p class="text-xs sm:text-sm font-bold text-white truncate">${escapeHtml(t.team_name)}</p>
+                                    <p class="text-[11px] text-emerald-300 truncate">${escapeHtml(t.status)}</p>
+                                </div>
+                            </div>
+                            <form method="POST" action="/admin/group/remove-team/${t.id}">
+                                <button
+                                    type="submit"
+                                    class="text-[11px] font-bold px-2 py-1 rounded-lg bg-slate-800 hover:bg-rose-600 text-slate-200 cursor-pointer"
+                                >
+                                    Remove
+                                </button>
+                            </form>
+                        </div>
+                    `).join("")
+                    : `<p class="text-xs text-slate-400 py-2">No teams in this group yet.</p>`;
+
+                return `
+                    <div class="bg-slate-950/85 border border-emerald-400/25 rounded-2xl p-4 space-y-3">
+                        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                            <h3 class="text-base font-extrabold text-emerald-300">${escapeHtml(grp.name)}</h3>
+                            <span class="text-xs font-bold bg-slate-800 text-slate-200 px-2.5 py-0.5 rounded-full">
+                                ${(grp.teams || []).length} Teams
+                            </span>
+                        </div>
+
+                        <form method="POST" action="/admin/group/${grp.id}/add-team" class="flex items-center gap-2">
+                            <select
+                                name="team_id"
+                                required
+                                class="flex-1 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs sm:text-sm text-white outline-none focus:border-emerald-400"
+                            >
+                                ${optionsHtml}
+                            </select>
+                            <button
+                                type="submit"
+                                class="shrink-0 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-3.5 py-2 rounded-xl text-xs sm:text-sm cursor-pointer"
+                            >
+                                Add Team
+                            </button>
+                        </form>
+
+                        <div class="space-y-2 max-h-56 overflow-y-auto pr-1">
+                            ${assignedHtml}
+                        </div>
+                    </div>
+                `;
+            }).join("");
+        }
+
+        function syncMatchTeamSelects() {
+            const s1 = document.getElementById("matchTeam1Select");
+            const s2 = document.getElementById("matchTeam2Select");
+            if (!s1 || !s2) return;
+
+            const activeTeams = TEAMS_DATA.filter((t) => t.status !== "CXL");
+            const opts = activeTeams.length
+                ? activeTeams.map((t) => `<option value="${t.id}">${escapeHtml(t.team_name)}</option>`).join("")
+                : `<option value="">No active teams</option>`;
+
+            s1.innerHTML = opts;
+            s2.innerHTML = opts;
+            if (activeTeams.length > 1) {
+                s2.selectedIndex = 1;
+            }
+        }
+
+        function renderAdminMatches() {
+            const box = document.getElementById("adminMatchesList");
+            if (!box) return;
+            if (!MATCHES_DATA.length) {
+                box.innerHTML = `
+                    <div class="col-span-full bg-slate-950/70 border border-slate-800 rounded-xl p-5 text-center text-xs sm:text-sm text-slate-300">
+                        No matches added yet. Use + Add Match above.
+                    </div>
+                `;
+                return;
+            }
+
+            box.innerHTML = MATCHES_DATA.map((m, idx) => `
+                <div class="bg-slate-950/90 border border-emerald-400/30 rounded-2xl p-4 shadow-lg">
+                    <div class="flex items-center justify-between text-[11px] font-bold text-emerald-300 bg-emerald-950/60 border border-emerald-500/25 rounded-lg px-3 py-1.5 mb-3">
+                        <span>MATCH #${idx + 1} &bull; ${escapeHtml(m.match_date)}</span>
+                        <span>${escapeHtml(m.match_time)}</span>
+                    </div>
+
+                    <div class="grid grid-cols-11 items-center gap-2 text-center">
+                        <div class="col-span-5 flex flex-col items-center">
+                            <img
+                                src="${resolveImg(m.team1_image)}"
+                                alt="${escapeHtml(m.team1_name)}"
+                                class="w-14 h-14 rounded-full object-cover object-top border-2 border-emerald-400/60 bg-slate-800"
+                            >
+                            <p class="mt-1.5 font-extrabold text-xs sm:text-sm text-white truncate max-w-full">
+                                ${escapeHtml(m.team1_name)}
+                            </p>
+                        </div>
+
+                        <div class="col-span-1 font-black text-amber-300 text-xs">VS</div>
+
+                        <div class="col-span-5 flex flex-col items-center">
+                            <img
+                                src="${resolveImg(m.team2_image)}"
+                                alt="${escapeHtml(m.team2_name)}"
+                                class="w-14 h-14 rounded-full object-cover object-top border-2 border-emerald-400/60 bg-slate-800"
+                            >
+                            <p class="mt-1.5 font-extrabold text-xs sm:text-sm text-white truncate max-w-full">
+                                ${escapeHtml(m.team2_name)}
+                            </p>
+                        </div>
+                    </div>
+
+                    <form method="POST" action="/admin/match/${m.id}/delete" class="mt-3 pt-2 border-t border-slate-800 text-right">
+                        <button
+                            type="submit"
+                            class="text-xs font-bold px-3 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500 text-rose-200 hover:text-white border border-rose-400/40 cursor-pointer"
+                        >
+                            Delete Match
+                        </button>
+                    </form>
+                </div>
+            `).join("");
+        }
+
+        // 7E. Public Ad Spotlight & Live Dashboard Renderers
+        function setAdMatchSlide(newIdx) {
+            if (!MATCHES_DATA.length) {
+                adMatchIndex = 0;
+                return;
+            }
+            adMatchIndex = ((newIdx % MATCHES_DATA.length) + MATCHES_DATA.length) % MATCHES_DATA.length;
+            renderAdMatchStage();
+        }
+
+        function startAdMatchAutoPlay() {
+            if (adMatchTimer) {
+                clearInterval(adMatchTimer);
+                adMatchTimer = null;
+            }
+            if (MATCHES_DATA.length > 1) {
+                adMatchTimer = setInterval(() => {
+                    adMatchIndex = (adMatchIndex + 1) % MATCHES_DATA.length;
+                    renderAdMatchStage();
+                }, 4500);
+            }
+        }
+
+        function renderAdMatchStage() {
+            const stage = document.getElementById("publicMatchAdStage");
+            const badge = document.getElementById("publicMatchesBadge");
+            if (!stage) return;
+
+            if (badge) {
+                badge.textContent = MATCHES_DATA.length
+                    ? `Match ${adMatchIndex + 1} of ${MATCHES_DATA.length}`
+                    : "0 Matches";
+            }
+
+            if (!MATCHES_DATA.length) {
+                stage.innerHTML = `
+                    <div class="bg-slate-950/75 border border-slate-800 rounded-2xl p-8 text-center text-sm text-slate-300">
+                        No matches scheduled for today yet.
+                    </div>
+                `;
+                return;
+            }
+
+            if (adMatchIndex >= MATCHES_DATA.length) {
+                adMatchIndex = 0;
+            }
+
+            const m = MATCHES_DATA[adMatchIndex];
+            const dotsHtml = MATCHES_DATA.map((_, i) => `
+                <button
+                    type="button"
+                    onclick="setAdMatchSlide(${i}); startAdMatchAutoPlay();"
+                    class="h-2.5 rounded-full transition-all cursor-pointer ${i === adMatchIndex ? "w-8 bg-emerald-400" : "w-2.5 bg-slate-600 hover:bg-slate-400"}"
+                    aria-label="Match ${i + 1}"
+                ></button>
+            `).join("");
+
+            stage.innerHTML = `
+                <div class="bg-gradient-to-br from-emerald-950/90 via-slate-950/95 to-emerald-950/90 border border-emerald-400/40 rounded-2xl p-4 sm:p-7 shadow-2xl space-y-5">
+                    <div class="flex flex-wrap items-center justify-between gap-2 bg-slate-900/90 border border-emerald-400/25 rounded-xl px-4 py-2.5">
+                        <span class="text-xs sm:text-sm font-black uppercase tracking-wider text-amber-300">
+                            MATCH ${adMatchIndex + 1} / ${MATCHES_DATA.length}
+                        </span>
+                        <span class="text-xs sm:text-sm font-bold text-emerald-300">
+                            ${escapeHtml(m.match_date)} &bull; ${escapeHtml(m.match_time)}
+                        </span>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-11 items-center gap-4 sm:gap-6">
+                        <div class="md:col-span-5 flex flex-col items-center bg-slate-900/75 border border-emerald-400/25 rounded-2xl p-3 sm:p-4">
+                            <div class="w-full h-64 sm:h-80 rounded-xl overflow-hidden bg-slate-800 border border-emerald-400/40 shadow-lg">
+                                <img
+                                    src="${resolveImg(m.team1_image)}"
+                                    alt="${escapeHtml(m.team1_name)}"
+                                    class="w-full h-full object-cover object-top"
+                                >
+                            </div>
+                            <h3 class="font-display mt-3.5 text-lg sm:text-2xl font-black uppercase tracking-wide text-white text-center">
+                                ${escapeHtml(m.team1_name)}
+                            </h3>
+                            <p class="text-xs sm:text-sm font-semibold text-emerald-300 mt-0.5">
+                                Captain: ${escapeHtml(m.team1_captain)}
+                            </p>
+                        </div>
+
+                        <div class="md:col-span-1 flex items-center justify-center">
+                            <span class="font-display inline-flex items-center justify-center w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-amber-400 text-slate-950 font-black text-base sm:text-xl shadow-lg">
+                                VS
+                            </span>
+                        </div>
+
+                        <div class="md:col-span-5 flex flex-col items-center bg-slate-900/75 border border-emerald-400/25 rounded-2xl p-3 sm:p-4">
+                            <div class="w-full h-64 sm:h-80 rounded-xl overflow-hidden bg-slate-800 border border-emerald-400/40 shadow-lg">
+                                <img
+                                    src="${resolveImg(m.team2_image)}"
+                                    alt="${escapeHtml(m.team2_name)}"
+                                    class="w-full h-full object-cover object-top"
+                                >
+                            </div>
+                            <h3 class="font-display mt-3.5 text-lg sm:text-2xl font-black uppercase tracking-wide text-white text-center">
+                                ${escapeHtml(m.team2_name)}
+                            </h3>
+                            <p class="text-xs sm:text-sm font-semibold text-emerald-300 mt-0.5">
+                                Captain: ${escapeHtml(m.team2_captain)}
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800/90">
+                        <button
+                            type="button"
+                            onclick="setAdMatchSlide(adMatchIndex - 1); startAdMatchAutoPlay();"
+                            class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs sm:text-sm font-bold border border-slate-600 cursor-pointer"
+                        >
+                            &larr; Prev Match
+                        </button>
+
+                        <div class="flex items-center gap-2">
+                            ${dotsHtml}
+                        </div>
+
+                        <button
+                            type="button"
+                            onclick="setAdMatchSlide(adMatchIndex + 1); startAdMatchAutoPlay();"
+                            class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs sm:text-sm font-extrabold cursor-pointer"
+                        >
+                            Next Match &rarr;
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderPublicViews() {
+            renderAdMatchStage();
+
+            const groupsGrid = document.getElementById("publicGroupsGrid");
+            if (groupsGrid) {
+                groupsGrid.innerHTML = GROUPS_DATA.map((grp) => {
+                    const listHtml = (grp.teams || []).length
+                        ? (grp.teams || []).map((t) => `
+                            <div class="flex items-center justify-between gap-2 bg-slate-900/90 border border-slate-800 rounded-xl px-3 py-2">
+                                <div class="flex items-center gap-2.5 min-w-0">
+                                    <img
+                                        src="${resolveImg(t.captain_image)}"
+                                        alt="${escapeHtml(t.team_name)}"
+                                        class="w-9 h-9 rounded-full object-cover object-top border border-emerald-400/50 shrink-0"
+                                    >
+                                    <div class="min-w-0">
+                                        <p class="text-xs sm:text-sm font-bold text-white truncate">${escapeHtml(t.team_name)}</p>
+                                        <p class="text-[10px] text-emerald-300 truncate">${escapeHtml(t.status)}</p>
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onclick="openTeamViewById(${t.id})"
+                                    class="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 cursor-pointer"
+                                >
+                                    View
+                                </button>
+                            </div>
+                        `).join("")
+                        : `<p class="text-xs text-slate-400 py-2">No teams in this group yet.</p>`;
+
+                    return `
+                        <div class="bg-slate-950/85 border border-emerald-400/25 rounded-2xl p-4 space-y-2.5">
+                            <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                                <h3 class="text-sm sm:text-base font-extrabold text-emerald-300">${escapeHtml(grp.name)}</h3>
+                                <span class="text-[11px] font-bold bg-slate-800 text-slate-200 px-2 py-0.5 rounded-full">
+                                    ${(grp.teams || []).length}
+                                </span>
+                            </div>
+                            <div class="space-y-2 max-h-56 overflow-y-auto pr-1">${listHtml}</div>
+                        </div>
+                    `;
+                }).join("");
+            }
+
+            const teamsBox = document.getElementById("publicTeamsContainer");
+            if (teamsBox) {
+                const visibleTeams = TEAMS_DATA.filter((t) => t.status !== "CXL");
+                if (!visibleTeams.length) {
+                    teamsBox.innerHTML = `
+                        <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-6 text-center text-xs sm:text-sm text-slate-300">
+                            No active teams registered yet.
+                        </div>
+                    `;
+                } else {
+                    teamsBox.innerHTML = visibleTeams.map((team) => `
+                        <div class="bg-slate-950/85 p-3.5 rounded-xl border border-slate-800 flex items-center justify-between gap-3">
+                            <div class="flex items-center gap-3 min-w-0">
+                                <img
+                                    src="${resolveImg(team.captain_image)}"
+                                    alt="${escapeHtml(team.captain_name)}"
+                                    class="w-11 h-11 rounded-full object-cover object-top border border-emerald-400/60 bg-slate-800 shrink-0"
+                                >
+                                <div class="min-w-0">
+                                    <p class="font-bold text-white text-sm truncate">${escapeHtml(team.team_name)}</p>
+                                    <p class="text-xs text-slate-300 truncate">
+                                        Captain: <span class="text-white">${escapeHtml(team.captain_name)}</span> &bull; ${escapeHtml(team.city)}
+                                    </p>
+                                    ${team.group_name ? `<p class="text-[11px] text-emerald-300 truncate">${escapeHtml(team.group_name)}</p>` : ""}
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2 shrink-0">
+                                ${statusBadgeHtml(team.status)}
+                                <button
+                                    type="button"
+                                    onclick="openTeamViewById(${team.id})"
+                                    class="text-xs font-bold px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 cursor-pointer"
+                                >
+                                    View
+                                </button>
+                            </div>
+                        </div>
+                    `).join("");
+                }
+            }
+        }
+
+        // 7F. Live Polling & Initialization
+        function refreshAllUI() {
+            if (IS_ADMIN) {
+                renderAdminPool();
+                renderSideStatusList();
+                renderAdminGroups();
+                syncMatchTeamSelects();
+                renderAdminMatches();
+            } else {
+                renderPublicViews();
+            }
+        }
+
+        async function pollLiveData() {
+            try {
+                const res = await fetch("/api/live-teams", { cache: "no-store" });
+                if (!res.ok) return;
+                const data = await res.json();
+                const prevLen = MATCHES_DATA.length;
+                TEAMS_DATA = data.teams || [];
+                GROUPS_DATA = data.groups || [];
+                MATCHES_DATA = data.matches || [];
+
+                if (MATCHES_DATA.length !== prevLen) {
+                    adMatchIndex = 0;
+                    if (!IS_ADMIN && !document.getElementById("liveUserDashboard")?.classList.contains("hidden")) {
+                        startAdMatchAutoPlay();
+                    }
+                }
+
+                const slotsEl = document.getElementById("liveSlotsText");
+                if (slotsEl) {
+                    slotsEl.textContent = `Live Slots: ${data.total} / ${data.max_teams} Teams Registered`;
+                }
+
+                const poolBadge = document.getElementById("adminPoolCountBadge");
+                if (poolBadge) {
+                    poolBadge.textContent = `${data.total} / ${data.max_teams} REGISRD`;
+                }
+
+                const pubBadge = document.getElementById("publicTeamsCountBadge");
+                if (pubBadge) {
+                    pubBadge.textContent = `${data.total} / ${data.max_teams}`;
+                }
+
+                refreshAllUI();
+            } catch (e) {
+                // Ignore transient network hiccups during live polling
+            }
+        }
+
+        window.addEventListener("DOMContentLoaded", function () {
+            refreshAllUI();
+            if (!IS_ADMIN) {
+                goToOnboardingStage(OPEN_REG_MODAL ? 3 : 1);
+            }
+            if (OPEN_REG_MODAL) {
+                openRegistrationModal();
+            }
+            setInterval(pollLiveData, 4000);
+        });
+
+        function previewFile(input, imgId) {
+            const file = input.files && input.files[0];
+            const img = document.getElementById(imgId);
+            if (!file || !img) return;
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // 7G. Fallback Canvas Stadium Background
+        (function () {
+            const canvas = document.getElementById("cricketMotionBg");
+            if (!canvas) return;
+            const ctx = canvas.getContext("2d");
+            let w = 0;
+            let h = 0;
+            let t = 0;
+
+            const ball = { x: 0, y: 0, vx: 5.5, vy: -3.2, r: 8, trail: [] };
+
+            function resize() {
+                w = canvas.width = window.innerWidth;
+                h = canvas.height = window.innerHeight;
+                if (!ball.x || !ball.y) {
+                    ball.x = w * 0.28;
+                    ball.y = h * 0.58;
+                }
+            }
+
+            window.addEventListener("resize", resize);
+            resize();
+
+            function drawFloodlight(x, y, angleOffset) {
+                ctx.save();
+                ctx.translate(x, y);
+                ctx.rotate(Math.sin(t * 0.8 + angleOffset) * 0.16);
+                const grad = ctx.createLinearGradient(0, 0, 0, h * 0.72);
+                grad.addColorStop(0, "rgba(236, 253, 245, 0.34)");
+                grad.addColorStop(0.5, "rgba(110, 231, 183, 0.14)");
+                grad.addColorStop(1, "rgba(16, 185, 129, 0)");
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.moveTo(-24, 0);
+                ctx.lineTo(24, 0);
+                ctx.lineTo(220, h * 0.72);
+                ctx.lineTo(-220, h * 0.72);
+                ctx.closePath();
+                ctx.fill();
+                ctx.fillStyle = "#e2e8f0";
+                ctx.fillRect(-26, -12, 52, 16);
+                ctx.restore();
+            }
+
+            function drawPlayerSilhouette(x, y, scale, swinging) {
+                ctx.save();
+                ctx.translate(x, y);
+                ctx.scale(scale, scale);
+                ctx.fillStyle = "rgba(15, 23, 42, 0.72)";
+                ctx.beginPath();
+                ctx.arc(0, -46, 11, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.roundRect(-10, -33, 20, 32, 6);
+                ctx.fill();
+                const stride = Math.sin(t * 4) * 7;
+                ctx.strokeStyle = "rgba(15, 23, 42, 0.78)";
+                ctx.lineWidth = 7;
+                ctx.lineCap = "round";
+                ctx.beginPath();
+                ctx.moveTo(-4, -2);
+                ctx.lineTo(-10 + stride, 24);
+                ctx.moveTo(4, -2);
+                ctx.lineTo(11 - stride, 24);
+                ctx.stroke();
+                if (swinging) {
+                    const batAngle = -0.8 + Math.sin(t * 3.5) * 0.95;
+                    ctx.save();
+                    ctx.translate(10, -22);
+                    ctx.rotate(batAngle);
+                    ctx.fillStyle = "#f59e0b";
+                    ctx.fillRect(0, -3, 34, 7);
+                    ctx.restore();
+                }
+                ctx.restore();
+            }
+
+            function render() {
+                t += 0.02;
+                const turf = ctx.createLinearGradient(0, 0, 0, h);
+                turf.addColorStop(0, "#022c22");
+                turf.addColorStop(0.35, "#065f46");
+                turf.addColorStop(0.75, "#047857");
+                turf.addColorStop(1, "#022c22");
+                ctx.fillStyle = turf;
+                ctx.fillRect(0, 0, w, h);
+
+                const stripeCount = 10;
+                for (let i = 0; i < stripeCount; i++) {
+                    const sy = h * 0.34 + (i * (h * 0.66)) / stripeCount;
+                    const sh = (h * 0.66) / stripeCount;
+                    ctx.fillStyle = i % 2 === 0 ? "rgba(16, 185, 129, 0.14)" : "rgba(4, 120, 87, 0.14)";
+                    ctx.fillRect(0, sy, w, sh);
+                }
+
+                drawFloodlight(w * 0.16, 26, 0);
+                drawFloodlight(w * 0.5, 18, 1.4);
+                drawFloodlight(w * 0.84, 26, 2.8);
+
+                ctx.save();
+                ctx.strokeStyle = "rgba(255, 255, 255, 0.28)";
+                ctx.lineWidth = 3;
+                ctx.setLineDash([16, 12]);
+                ctx.beginPath();
+                ctx.ellipse(w * 0.5, h * 0.58, w * 0.44, h * 0.32, 0, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+
+                ctx.save();
+                ctx.translate(w * 0.5, h * 0.58);
+                ctx.fillStyle = "rgba(234, 179, 8, 0.34)";
+                ctx.beginPath();
+                ctx.moveTo(-55, -75);
+                ctx.lineTo(55, -75);
+                ctx.lineTo(95, 85);
+                ctx.lineTo(-95, 85);
+                ctx.closePath();
+                ctx.fill();
+                ctx.strokeStyle = "rgba(255, 255, 255, 0.55)";
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.restore();
+
+                const mobScale = w < 640 ? 0.72 : 1.05;
+                drawPlayerSilhouette(w * 0.52, h * 0.56, mobScale, true);
+                drawPlayerSilhouette(w * 0.44, h * 0.46, mobScale * 0.9, false);
+
+                ball.x += ball.vx + Math.cos(t * 2.2) * 1.4;
+                ball.y += ball.vy + Math.sin(t * 2.2) * 1.4;
+                if (ball.x < 30 || ball.x > w - 30) ball.vx *= -1;
+                if (ball.y < h * 0.25 || ball.y > h - 30) ball.vy *= -1;
+
+                ball.trail.push({ x: ball.x, y: ball.y });
+                if (ball.trail.length > 22) ball.trail.shift();
+
+                for (let i = 0; i < ball.trail.length; i++) {
+                    const pt = ball.trail[i];
+                    const ratio = (i + 1) / ball.trail.length;
+                    ctx.fillStyle = `rgba(251, 191, 36, ${ratio * 0.45})`;
+                    ctx.beginPath();
+                    ctx.arc(pt.x, pt.y, ball.r * ratio, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                ctx.fillStyle = "#ef4444";
+                ctx.beginPath();
+                ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = "#fde047";
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+
+                requestAnimationFrame(render);
+            }
+
+            render();
+        })();
+    </script>
+
+</body>
+</html>
