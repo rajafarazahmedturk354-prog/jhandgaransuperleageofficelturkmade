@@ -92,7 +92,7 @@ def save_uploaded_image(file_storage):
     unique_name = f"{uuid.uuid4().hex}_{secure_filename(file_storage.filename)}"
     if not unique_name.lower().endswith(f".{ext}"):
         unique_name = f"{uuid.uuid4().hex}.{ext}"
-   full_path = os.path.join(UPLOAD_FOLDER, unique_name)
+    full_path = os.path.join(UPLOAD_FOLDER, unique_name)
     file_storage.save(full_path)
     return f"/static/uploads/{unique_name}"
 
